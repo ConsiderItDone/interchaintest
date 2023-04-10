@@ -12,6 +12,11 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/03-connection/types"
 )
 
+type AvalancheSubnetConfig struct {
+	Name   string
+	VMFile string
+}
+
 // ChainConfig defines the chain parameters requires to run an interchaintest testnet for a chain.
 type ChainConfig struct {
 	// Chain type, e.g. cosmos.
@@ -54,6 +59,8 @@ type ChainConfig struct {
 	UsingChainIDFlagCLI bool `yaml:"using-chain-id-flag-cli"`
 	// Configuration describing additional sidecar processes.
 	SidecarConfigs []SidecarConfig
+	//
+	AvalancheSubnet *AvalancheSubnetConfig `yaml:"avalanche-subnet"`
 }
 
 func (c ChainConfig) Clone() ChainConfig {
