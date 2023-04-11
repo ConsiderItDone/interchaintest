@@ -60,7 +60,7 @@ type ChainConfig struct {
 	// Configuration describing additional sidecar processes.
 	SidecarConfigs []SidecarConfig
 	//
-	AvalancheSubnet *AvalancheSubnetConfig `yaml:"avalanche-subnet"`
+	AvalancheSubnets []AvalancheSubnetConfig `yaml:"avalanche-subnet"`
 }
 
 func (c ChainConfig) Clone() ChainConfig {
