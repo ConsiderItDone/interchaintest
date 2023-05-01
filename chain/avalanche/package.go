@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
@@ -18,7 +19,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var _ ibc.Chain = &AvalancheChain{}
+var (
+	_                    ibc.Chain = &AvalancheChain{}
+	ChainBootsrapTimeout           = 5 * time.Minute
+)
 
 type AvalancheChain struct {
 	log           *zap.Logger
@@ -107,15 +111,14 @@ func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *c
 		}
 	}
 
+	keyFactory := secp256k1.Factory{}
+	key, err := keyFactory.NewPrivateKey()
+	if err != nil {
+		return err
+	}
 	numNodes := c.numValidators + c.numFullNodes
 	credentials := make([]AvalancheNodeCredentials, numNodes)
-	keyFactory := secp256k1.Factory{}
 	for i := 0; i < numNodes; i++ {
-		key, err := keyFactory.NewPrivateKey()
-		if err != nil {
-			return err
-		}
-
 		rawTlsCert, rawTlsKey, err := utils.NewCertAndKeyBytes()
 		if err != nil {
 			return err
@@ -132,28 +135,26 @@ func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *c
 		credentials[i].TLSKey = rawTlsKey
 	}
 
-	allocations := make([]GenesisAllocation, 0, c.numValidators)
-	stakedFunds := make([]string, 0, c.numValidators)
-	stakes := make([]GenesisStaker, 0, c.numValidators)
-	for i := 0; i < c.numValidators; i++ {
-		avaxAddr0, _ := utils.Format("X", chainId.Name, credentials[0].PK.PublicKey().Address().Bytes())
-		avaxAddr, _ := utils.Format("X", chainId.Name, credentials[i].PK.PublicKey().Address().Bytes())
-		allocations = append(allocations, GenesisAllocation{
-			ETHAddr:        "0x" + credentials[i].PK.PublicKey().Address().Hex(),
+	avaxAddr, _ := utils.Format("X", chainId.Name, key.PublicKey().Address().Bytes())
+	allocations := []GenesisAllocation{
+		{
+			ETHAddr:        "0x" + key.PublicKey().Address().Hex(),
 			AVAXAddr:       avaxAddr,
 			InitialAmount:  math.MaxUint32,
 			UnlockSchedule: []GenesisLockedAmount{{Amount: 1294967295}},
-		})
+		},
+	}
+	stakedFunds := make([]string, 0, c.numValidators)
+	stakes := make([]GenesisStaker, 0, c.numValidators)
+	for i := 0; i < c.numValidators; i++ {
 		stakes = append(stakes, GenesisStaker{
 			NodeID:        credentials[i].ID.String(),
-			RewardAddress: avaxAddr0,
+			RewardAddress: avaxAddr,
 			DelegationFee: 1000,
 		})
 	}
-	avaxAddr, _ := utils.Format("X", chainId.Name, credentials[0].PK.PublicKey().Address().Bytes())
 	stakedFunds = append(stakedFunds, avaxAddr)
 	genesis := NewGenesis(chainId.Number, allocations, stakedFunds, stakes)
-
 	nodes := make(AvalancheNodes, 0, numNodes)
 	for i := 0; i < numNodes; i++ {
 		var bootstrapOpt []*AvalancheNode = nil
@@ -186,7 +187,10 @@ func (c *AvalancheChain) Start(testName string, ctx context.Context, additionalG
 	for _, node := range c.nodes {
 		node := node
 		eg.Go(func() error {
-			return node.StartContainer(egCtx, testName, additionalGenesisWallets)
+			tCtx, tCtxCancel := context.WithTimeout(egCtx, ChainBootsrapTimeout)
+			defer tCtxCancel()
+
+			return node.Start(tCtx, testName, additionalGenesisWallets)
 		})
 	}
 	return eg.Wait()

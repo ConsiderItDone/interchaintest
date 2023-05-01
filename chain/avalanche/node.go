@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/network"
@@ -16,6 +17,7 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/utils"
 	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/utils/crypto/secp256k1"
 	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/utils/ids"
+	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/utils/net"
 	"github.com/strangelove-ventures/interchaintest/v7/ibc"
 	"github.com/strangelove-ventures/interchaintest/v7/internal/dockerutil"
 	"go.uber.org/zap"
@@ -270,7 +272,7 @@ func (n *AvalancheNode) SendIBCTransfer(ctx context.Context, channelID, keyName 
 }
 
 func (n *AvalancheNode) Height(ctx context.Context) (uint64, error) {
-	panic("ToDo: implement me")
+	return net.PlatformGetHeight(ctx, fmt.Sprintf("http://127.0.0.1:%s/ext/bc/P", n.RPCPort()))
 }
 
 func (n *AvalancheNode) GetBalance(ctx context.Context, address string, denom string) (int64, error) {
@@ -362,4 +364,29 @@ func (n *AvalancheNode) CreateContainer(ctx context.Context) error {
 
 func (n *AvalancheNode) StartContainer(ctx context.Context, testName string, additionalGenesisWallets []ibc.WalletAmount) error {
 	return n.containerLifecycle.StartContainer(ctx)
+}
+
+func (n *AvalancheNode) Start(ctx context.Context, testName string, additionalGenesisWallets []ibc.WalletAmount) error {
+	err := n.StartContainer(ctx, testName, additionalGenesisWallets)
+	if err != nil {
+		return err
+	}
+
+	err = net.WaitPort(ctx, "127.0.0.1", n.RPCPort())
+	if err != nil {
+		return err
+	}
+
+	infoAddr := fmt.Sprintf("http://127.0.0.1:%s/ext/info", n.RPCPort())
+	for done := false; !done && err == nil; {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context closed")
+		default:
+			done, err = net.InfoIsBootstrapped(ctx, infoAddr, "X")
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+
+	return err
 }
