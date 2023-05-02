@@ -5,19 +5,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/ava-labs/avalanchego/api/info"
+	"github.com/ava-labs/avalanchego/ids"
+	"github.com/ava-labs/avalanchego/utils/crypto/secp256k1"
+	"github.com/ava-labs/avalanchego/vms/platformvm"
+	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
+	"github.com/ava-labs/avalanchego/wallet/subnet/primary"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
-	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/utils"
-	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/utils/crypto/secp256k1"
-	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/utils/ids"
-	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/utils/net"
+	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/lib"
 	"github.com/strangelove-ventures/interchaintest/v7/ibc"
 	"github.com/strangelove-ventures/interchaintest/v7/internal/dockerutil"
 	"go.uber.org/zap"
@@ -63,7 +67,7 @@ type (
 		Subnets     []AvalancheNodeSubnetOpts
 		Bootstrap   []*AvalancheNode
 		Credentials AvalancheNodeCredentials
-		ChainID     utils.ChainID
+		ChainID     lib.ChainID
 	}
 )
 
@@ -272,7 +276,7 @@ func (n *AvalancheNode) SendIBCTransfer(ctx context.Context, channelID, keyName 
 }
 
 func (n *AvalancheNode) Height(ctx context.Context) (uint64, error) {
-	return net.PlatformGetHeight(ctx, fmt.Sprintf("http://127.0.0.1:%s/ext/bc/P", n.RPCPort()))
+	return platformvm.NewClient(fmt.Sprintf("http://127.0.0.1:%s", n.RPCPort())).GetHeight(ctx)
 }
 
 func (n *AvalancheNode) GetBalance(ctx context.Context, address string, denom string) (int64, error) {
@@ -366,26 +370,46 @@ func (n *AvalancheNode) StartContainer(ctx context.Context, testName string, add
 	return n.containerLifecycle.StartContainer(ctx)
 }
 
+func (n *AvalancheNode) CreateSubnet(ctx context.Context) (ids.ID, error) {
+	kc := secp256k1fx.NewKeychain(n.options.Credentials.PK)
+	subnetOwner := n.options.Credentials.PK.Address()
+
+	wallet, err := primary.NewWalletFromURI(ctx, fmt.Sprintf("http://127.0.0.1:%s", n.RPCPort()), kc)
+	if err != nil {
+		return ids.Empty, err
+	}
+
+	return wallet.P().IssueCreateSubnetTx(&secp256k1fx.OutputOwners{
+		Threshold: 1,
+		Addrs: []ids.ShortID{
+			subnetOwner,
+		},
+	})
+}
+
 func (n *AvalancheNode) Start(ctx context.Context, testName string, additionalGenesisWallets []ibc.WalletAmount) error {
 	err := n.StartContainer(ctx, testName, additionalGenesisWallets)
 	if err != nil {
 		return err
 	}
 
-	err = net.WaitPort(ctx, "127.0.0.1", n.RPCPort())
+	err = lib.WaitPort(ctx, "127.0.0.1", n.RPCPort())
 	if err != nil {
 		return err
 	}
 
-	infoAddr := fmt.Sprintf("http://127.0.0.1:%s/ext/info", n.RPCPort())
+	infoClient := info.NewClient(fmt.Sprintf("http://127.0.0.1:%s", n.RPCPort()))
 	for done := false; !done && err == nil; {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context closed")
 		default:
-			done, err = net.InfoIsBootstrapped(ctx, infoAddr, "X")
-			time.Sleep(500 * time.Millisecond)
+			done, err = infoClient.IsBootstrapped(ctx, "X")
+			if errors.Is(err, io.EOF) {
+				err = nil
+			}
 		}
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	return err

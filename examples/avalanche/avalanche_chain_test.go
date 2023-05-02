@@ -28,6 +28,9 @@ func TestAvalancheChainStart(t *testing.T) {
 			Version: "v1.9.16",
 			ChainConfig: ibc.ChainConfig{
 				ChainID: "neto-123123",
+				AvalancheSubnets: []ibc.AvalancheSubnetConfig{
+					{Name: "timestampvm"},
+				},
 			},
 			NumFullNodes:  &nf,
 			NumValidators: &nv,

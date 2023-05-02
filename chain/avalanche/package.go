@@ -9,11 +9,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/ava-labs/avalanchego/ids"
+	"github.com/ava-labs/avalanchego/staking"
+	"github.com/ava-labs/avalanchego/utils/crypto/secp256k1"
+	"github.com/ava-labs/avalanchego/utils/formatting/address"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
-	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/utils"
-	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/utils/crypto/secp256k1"
-	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/utils/ids"
+	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/lib"
 	"github.com/strangelove-ventures/interchaintest/v7/ibc"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -82,7 +84,7 @@ func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *c
 	if rawChainID == "" {
 		rawChainID = "localnet-123456"
 	}
-	chainId, err := utils.ParseChainID(rawChainID)
+	chainId, err := lib.ParseChainID(rawChainID)
 	if err != nil {
 		c.log.Error("Failed to pull image",
 			zap.Error(err),
@@ -116,15 +118,16 @@ func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *c
 	if err != nil {
 		return err
 	}
+
 	numNodes := c.numValidators + c.numFullNodes
 	credentials := make([]AvalancheNodeCredentials, numNodes)
 	for i := 0; i < numNodes; i++ {
-		rawTlsCert, rawTlsKey, err := utils.NewCertAndKeyBytes()
+		rawTlsCert, rawTlsKey, err := staking.NewCertAndKeyBytes()
 		if err != nil {
 			return err
 		}
 
-		cert, err := utils.NewTLSCertFromBytes(rawTlsCert, rawTlsKey)
+		cert, err := staking.LoadTLSCertFromBytes(rawTlsKey, rawTlsCert)
 		if err != nil {
 			return err
 		}
@@ -135,7 +138,7 @@ func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *c
 		credentials[i].TLSKey = rawTlsKey
 	}
 
-	avaxAddr, _ := utils.Format("X", chainId.Name, key.PublicKey().Address().Bytes())
+	avaxAddr, _ := address.Format("X", chainId.Name, key.PublicKey().Address().Bytes())
 	allocations := []GenesisAllocation{
 		{
 			ETHAddr:        "0x" + key.PublicKey().Address().Hex(),
@@ -191,6 +194,19 @@ func (c *AvalancheChain) Start(testName string, ctx context.Context, additionalG
 			defer tCtxCancel()
 
 			return node.Start(tCtx, testName, additionalGenesisWallets)
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	eg, egCtx = errgroup.WithContext(ctx)
+	for _, subnet := range c.node().options.Subnets {
+		subnet := subnet
+		eg.Go(func() error {
+			ids, err := c.node().CreateSubnet(ctx)
+			fmt.Printf("[subnet %s] creation result %x (%s)\n", subnet.Name, ids, err)
+			return err
 		})
 	}
 	return eg.Wait()
