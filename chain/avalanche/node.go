@@ -30,8 +30,12 @@ import (
 )
 
 var (
-	RPCPort     = "9650/tcp"
-	StakingPort = "9651/tcp"
+	RPCPort      = "9650/tcp"
+	StakingPort  = "9651/tcp"
+	portBindings = nat.PortSet{
+		nat.Port(RPCPort):     {},
+		nat.Port(StakingPort): {},
+	}
 )
 
 type (
@@ -366,18 +370,12 @@ func (n *AvalancheNode) CreateContainer(ctx context.Context) error {
 			"--bootstrap-ids", bootstrapIds,
 		)
 	}
-	port1, _ := nat.NewPort("tcp", "9650")
-	port2, _ := nat.NewPort("tcp", "9651")
-	ports := nat.PortSet{
-		port1: {},
-		port2: {},
-	}
 	return n.containerLifecycle.CreateContainerInNetwork(
 		ctx,
 		n.testName,
 		n.networkID,
 		n.image,
-		ports,
+		portBindings,
 		n.Bind(),
 		&network.NetworkingConfig{
 			EndpointsConfig: map[string](*network.EndpointSettings){
