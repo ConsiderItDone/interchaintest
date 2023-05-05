@@ -395,6 +395,10 @@ func (n *AvalancheNode) StartContainer(ctx context.Context, testName string, add
 }
 
 func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
+	if len(n.options.Subnets) == 0 {
+		return nil
+	}
+
 	kc := secp256k1fx.NewKeychain(n.options.Credentials.PK)
 	ownerAddr := n.options.Credentials.PK.Address()
 
