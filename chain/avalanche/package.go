@@ -61,23 +61,23 @@ func (c *AvalancheChain) Config() ibc.ChainConfig {
 
 // Initialize initializes node structs so that things like initializing keys can be done before starting the chain
 func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *client.Client, networkID string) error {
-	//for _, image := range c.Config().Images {
-	//	rc, err := cli.ImagePull(
-	//		ctx,
-	//		image.Repository+":"+image.Version,
-	//		types.ImagePullOptions{},
-	//	)
-	//	if err != nil {
-	//		c.log.Error("Failed to pull image",
-	//			zap.Error(err),
-	//			zap.String("repository", image.Repository),
-	//			zap.String("tag", image.Version),
-	//		)
-	//	} else {
-	//		_, _ = io.Copy(io.Discard, rc)
-	//		_ = rc.Close()
-	//	}
-	//}
+	for _, image := range c.Config().Images {
+		rc, err := cli.ImagePull(
+			ctx,
+			image.Repository+":"+image.Version,
+			types.ImagePullOptions{},
+		)
+		if err != nil {
+			c.log.Error("Failed to pull image",
+				zap.Error(err),
+				zap.String("repository", image.Repository),
+				zap.String("tag", image.Version),
+			)
+		} else {
+			_, _ = io.Copy(io.Discard, rc)
+			_ = rc.Close()
+		}
+	}
 
 	rawChainID := c.Config().ChainID
 	if rawChainID == "" {
@@ -157,7 +157,25 @@ func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *c
 			ETHAddr:        "0x" + key.PublicKey().Address().Hex(),
 			AVAXAddr:       avaxAddr,
 			InitialAmount:  4000000000,
+			UnlockSchedule: []GenesisLockedAmount{{Amount: 2000000000}, {Amount: 1000000000}},
+		},
+		{
+			ETHAddr:        "0x" + key.PublicKey().Address().Hex(),
+			AVAXAddr:       avaxAddr,
+			InitialAmount:  4000000000,
 			UnlockSchedule: []GenesisLockedAmount{},
+		},
+		{
+			ETHAddr:        "0x" + key.PublicKey().Address().Hex(),
+			AVAXAddr:       avaxAddr,
+			InitialAmount:  4000000000,
+			UnlockSchedule: []GenesisLockedAmount{},
+		},
+		{
+			ETHAddr:        "0x" + key.PublicKey().Address().Hex(),
+			AVAXAddr:       avaxAddr,
+			InitialAmount:  4000000000,
+			UnlockSchedule: []GenesisLockedAmount{{Amount: 4000000000, Locktime: uint32(time.Second)}},
 		},
 		{
 			ETHAddr:        "0x" + key.PublicKey().Address().Hex(),
