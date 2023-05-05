@@ -12,7 +12,9 @@ import (
 
 	"github.com/ava-labs/avalanchego/api/info"
 	"github.com/ava-labs/avalanchego/ids"
+	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/crypto/secp256k1"
+	"github.com/ava-labs/avalanchego/vms/components/avax"
 	"github.com/ava-labs/avalanchego/vms/platformvm"
 	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
 	"github.com/ava-labs/avalanchego/wallet/subnet/primary"
@@ -58,8 +60,13 @@ type (
 	}
 
 	AvalancheNodeSubnetOpts struct {
-		Name string
-		VM   []byte
+		Name    string
+		VmID    ids.ID
+		VM      []byte
+		Genesis []byte
+
+		subnet ids.ID
+		chain  ids.ID
 	}
 
 	AvalancheNodeOpts struct {
@@ -148,6 +155,15 @@ func NewAvalancheNode(
 		return nil, err
 	}
 
+	vmaliases := make(map[ids.ID][]string)
+	for i := range node.options.Subnets {
+		vmaliases[node.options.Subnets[i].VmID] = []string{node.options.Subnets[i].Name}
+	}
+	vmaliasesData, err := json.MarshalIndent(vmaliases, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
 	if err := node.WriteFile(ctx, genesisBz, "genesis.json"); err != nil {
 		return nil, fmt.Errorf("failed to write genesis file: %w", err)
 	}
@@ -158,6 +174,16 @@ func NewAvalancheNode(
 
 	if err := node.WriteFile(ctx, options.Credentials.TLSKey, "tls.key"); err != nil {
 		return nil, fmt.Errorf("failed to write TLS key: %w", err)
+	}
+
+	if err := node.WriteFile(ctx, vmaliasesData, "configs/vms/aliases.json"); err != nil {
+		return nil, fmt.Errorf("failed to write TLS key: %w", err)
+	}
+
+	for _, subnet := range node.options.Subnets {
+		if err := node.WriteFile(ctx, subnet.VM, fmt.Sprintf("plugins/%s", subnet.VmID)); err != nil {
+			return nil, fmt.Errorf("failed to write vm body [%s]: %w", subnet.Name, err)
+		}
 	}
 
 	return node, node.CreateContainer(ctx)
@@ -370,21 +396,111 @@ func (n *AvalancheNode) StartContainer(ctx context.Context, testName string, add
 	return n.containerLifecycle.StartContainer(ctx)
 }
 
-func (n *AvalancheNode) CreateSubnet(ctx context.Context) (ids.ID, error) {
+func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 	kc := secp256k1fx.NewKeychain(n.options.Credentials.PK)
-	subnetOwner := n.options.Credentials.PK.Address()
+	ownerAddr := n.options.Credentials.PK.Address()
 
 	wallet, err := primary.NewWalletFromURI(ctx, fmt.Sprintf("http://127.0.0.1:%s", n.RPCPort()), kc)
 	if err != nil {
-		return ids.Empty, err
+		return err
 	}
 
-	return wallet.P().IssueCreateSubnetTx(&secp256k1fx.OutputOwners{
+	// Get the P-chain and the X-chain wallets
+	pWallet := wallet.P()
+	xWallet := wallet.X()
+
+	// Pull out useful constants to use when issuing transactions.
+	xChainID := xWallet.BlockchainID()
+	owner := &secp256k1fx.OutputOwners{
 		Threshold: 1,
-		Addrs: []ids.ShortID{
-			subnetOwner,
+		Addrs:     []ids.ShortID{ownerAddr},
+	}
+
+	// Send AVAX to the P-chain.
+	exportStartTime := time.Now()
+	exportTxID, err := xWallet.IssueExportTx(
+		constants.PlatformChainID,
+		[]*avax.TransferableOutput{
+			{
+				Asset: avax.Asset{
+					ID: xWallet.AVAXAssetID(),
+				},
+				Out: &secp256k1fx.TransferOutput{
+					Amt:          2 * uint64(len(n.options.Subnets)+1) * pWallet.CreateSubnetTxFee(),
+					OutputOwners: *owner,
+				},
+			},
 		},
-	})
+	)
+	if err != nil {
+		n.logger.Error(
+			"failed to issue X->P export transaction",
+			zap.Error(err),
+		)
+		return err
+	}
+	n.logger.Info(
+		"issued X->P export",
+		zap.String("exportTxID", exportTxID.String()),
+		zap.Float64("duration", time.Since(exportStartTime).Seconds()),
+	)
+
+	// Import AVAX from the X-chain into the P-chain.
+	importStartTime := time.Now()
+	importTxID, err := pWallet.IssueImportTx(xChainID, owner)
+	if err != nil {
+		n.logger.Error(
+			"failed to issue X->P import transaction",
+			zap.Error(err),
+		)
+		return err
+	}
+	n.logger.Info(
+		"issued X->P import",
+		zap.String("importTxID", importTxID.String()),
+		zap.Float64("duration", time.Since(importStartTime).Seconds()),
+	)
+
+	for i, subnet := range n.options.Subnets {
+		createSubnetStartTime := time.Now()
+		createSubnetTxID, err := pWallet.IssueCreateSubnetTx(owner)
+		if err != nil {
+			n.logger.Error(
+				"failed to issue create subnet transaction",
+				zap.Error(err),
+				zap.String("name", subnet.Name),
+			)
+			return err
+		}
+		n.logger.Info(
+			"issued create subnet transaction",
+			zap.String("name", subnet.Name),
+			zap.String("createSubnetTxID", createSubnetTxID.String()),
+			zap.Float64("duration", time.Since(createSubnetStartTime).Seconds()),
+		)
+
+		createChainStartTime := time.Now()
+		createChainTxID, err := pWallet.IssueCreateChainTx(createSubnetTxID, subnet.Genesis, subnet.VmID, nil, subnet.Name)
+		if err != nil {
+			n.logger.Error(
+				"failed to issue create chain transaction",
+				zap.Error(err),
+				zap.String("name", subnet.Name),
+			)
+			return err
+		}
+		n.logger.Info(
+			"created new chain",
+			zap.String("name", subnet.Name),
+			zap.String("createChainTxID", createChainTxID.String()),
+			zap.Float64("duration", time.Since(createChainStartTime).Seconds()),
+		)
+
+		n.options.Subnets[i].subnet = createSubnetTxID
+		n.options.Subnets[i].chain = createChainTxID
+	}
+
+	return nil
 }
 
 func (n *AvalancheNode) Start(ctx context.Context, testName string, additionalGenesisWallets []ibc.WalletAmount) error {

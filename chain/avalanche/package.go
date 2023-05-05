@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"net"
 	"os"
 	"time"
@@ -62,23 +61,23 @@ func (c *AvalancheChain) Config() ibc.ChainConfig {
 
 // Initialize initializes node structs so that things like initializing keys can be done before starting the chain
 func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *client.Client, networkID string) error {
-	for _, image := range c.Config().Images {
-		rc, err := cli.ImagePull(
-			ctx,
-			image.Repository+":"+image.Version,
-			types.ImagePullOptions{},
-		)
-		if err != nil {
-			c.log.Error("Failed to pull image",
-				zap.Error(err),
-				zap.String("repository", image.Repository),
-				zap.String("tag", image.Version),
-			)
-		} else {
-			_, _ = io.Copy(io.Discard, rc)
-			_ = rc.Close()
-		}
-	}
+	//for _, image := range c.Config().Images {
+	//	rc, err := cli.ImagePull(
+	//		ctx,
+	//		image.Repository+":"+image.Version,
+	//		types.ImagePullOptions{},
+	//	)
+	//	if err != nil {
+	//		c.log.Error("Failed to pull image",
+	//			zap.Error(err),
+	//			zap.String("repository", image.Repository),
+	//			zap.String("tag", image.Version),
+	//		)
+	//	} else {
+	//		_, _ = io.Copy(io.Discard, rc)
+	//		_ = rc.Close()
+	//	}
+	//}
 
 	rawChainID := c.Config().ChainID
 	if rawChainID == "" {
@@ -98,6 +97,14 @@ func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *c
 		subnetOpts = make([]AvalancheNodeSubnetOpts, len(c.cfg.AvalancheSubnets))
 		for i := range c.cfg.AvalancheSubnets {
 			subnetOpts[i].Name = c.cfg.AvalancheSubnets[i].Name
+			subnetOpts[i].Genesis = c.cfg.AvalancheSubnets[i].Genesis
+			vmName := make([]byte, 32)
+			copy(vmName[:], []byte(c.cfg.AvalancheSubnets[i].Name))
+			subnetOpts[i].VmID, err = ids.ToID(vmName)
+			if err != nil {
+				return err
+			}
+
 			if len(c.cfg.AvalancheSubnets[i].VMFile) > 0 {
 				file, err := os.Open(c.cfg.AvalancheSubnets[i].VMFile)
 				if err != nil {
@@ -138,13 +145,25 @@ func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *c
 		credentials[i].TLSKey = rawTlsKey
 	}
 
-	avaxAddr, _ := address.Format("X", chainId.Name, key.PublicKey().Address().Bytes())
+	avaxAddr, _ := address.Format("X", chainId.Name, key.Address().Bytes())
 	allocations := []GenesisAllocation{
 		{
 			ETHAddr:        "0x" + key.PublicKey().Address().Hex(),
 			AVAXAddr:       avaxAddr,
-			InitialAmount:  math.MaxUint32,
-			UnlockSchedule: []GenesisLockedAmount{{Amount: 1294967295}},
+			InitialAmount:  4000000000,
+			UnlockSchedule: []GenesisLockedAmount{{Amount: 2000000000}, {Amount: 1000000000}},
+		},
+		{
+			ETHAddr:        "0x" + key.PublicKey().Address().Hex(),
+			AVAXAddr:       avaxAddr,
+			InitialAmount:  4000000000,
+			UnlockSchedule: []GenesisLockedAmount{},
+		},
+		{
+			ETHAddr:        "0x" + key.PublicKey().Address().Hex(),
+			AVAXAddr:       avaxAddr,
+			InitialAmount:  4000000000,
+			UnlockSchedule: []GenesisLockedAmount{{Amount: 4000000000, Locktime: uint32(time.Second)}},
 		},
 	}
 	stakedFunds := make([]string, 0, c.numValidators)
@@ -153,7 +172,7 @@ func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *c
 		stakes = append(stakes, GenesisStaker{
 			NodeID:        credentials[i].ID.String(),
 			RewardAddress: avaxAddr,
-			DelegationFee: 1000,
+			DelegationFee: 100000000,
 		})
 	}
 	stakedFunds = append(stakedFunds, avaxAddr)
@@ -200,16 +219,7 @@ func (c *AvalancheChain) Start(testName string, ctx context.Context, additionalG
 		return err
 	}
 
-	eg, egCtx = errgroup.WithContext(ctx)
-	for _, subnet := range c.node().options.Subnets {
-		subnet := subnet
-		eg.Go(func() error {
-			ids, err := c.node().CreateSubnet(ctx)
-			fmt.Printf("[subnet %s] creation result %x (%s)\n", subnet.Name, ids, err)
-			return err
-		})
-	}
-	return eg.Wait()
+	return c.node().StartSubnets(ctx)
 }
 
 // Exec runs an arbitrary command using Chain's docker environment.
