@@ -18,6 +18,7 @@ import (
 	"github.com/ava-labs/avalanchego/vms/platformvm"
 	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
 	"github.com/ava-labs/avalanchego/wallet/subnet/primary"
+	"github.com/ava-labs/avalanchego/wallet/subnet/primary/common"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
@@ -353,6 +354,19 @@ func (n *AvalancheNode) CreateContainer(ctx context.Context) error {
 		}
 	}
 
+	trackSubnets := ""
+	if len(n.options.Subnets) > 0 {
+		for i := range n.options.Subnets {
+			sep := ""
+			if i > 0 {
+				sep = ","
+			}
+			if n.options.Subnets[i].subnet != ids.Empty {
+				trackSubnets += sep + n.options.Subnets[i].subnet.String()
+			}
+		}
+	}
+
 	cmd := []string{
 		n.chain.cfg.Bin,
 		"--http-host", "0.0.0.0",
@@ -369,6 +383,9 @@ func (n *AvalancheNode) CreateContainer(ctx context.Context) error {
 			"--bootstrap-ips", bootstrapIps,
 			"--bootstrap-ids", bootstrapIds,
 		)
+	}
+	if trackSubnets != "" {
+		cmd = append(cmd, "--track-subnets", trackSubnets)
 	}
 	return n.containerLifecycle.CreateContainerInNetwork(
 		ctx,
@@ -444,7 +461,7 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 	n.logger.Info(
 		"issued X->P export",
 		zap.String("exportTxID", exportTxID.String()),
-		zap.Float64("duration", time.Since(exportStartTime).Seconds()),
+		zap.Duration("duration", time.Since(exportStartTime)),
 	)
 
 	// Import AVAX from the X-chain into the P-chain.
@@ -460,12 +477,12 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 	n.logger.Info(
 		"issued X->P import",
 		zap.String("importTxID", importTxID.String()),
-		zap.Float64("duration", time.Since(importStartTime).Seconds()),
+		zap.Duration("duration", time.Since(importStartTime)),
 	)
 
 	for i, subnet := range n.options.Subnets {
 		createSubnetStartTime := time.Now()
-		createSubnetTxID, err := pWallet.IssueCreateSubnetTx(owner)
+		createSubnetTxID, err := pWallet.IssueCreateSubnetTx(owner, common.WithContext(ctx))
 		if err != nil {
 			n.logger.Error(
 				"failed to issue create subnet transaction",
@@ -478,7 +495,7 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 			"issued create subnet transaction",
 			zap.String("name", subnet.Name),
 			zap.String("createSubnetTxID", createSubnetTxID.String()),
-			zap.Float64("duration", time.Since(createSubnetStartTime).Seconds()),
+			zap.Duration("duration", time.Since(createSubnetStartTime)),
 		)
 
 		createChainStartTime := time.Now()
@@ -495,14 +512,22 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 			"created new chain",
 			zap.String("name", subnet.Name),
 			zap.String("createChainTxID", createChainTxID.String()),
-			zap.Float64("duration", time.Since(createChainStartTime).Seconds()),
+			zap.Duration("duration", time.Since(createChainStartTime)),
 		)
 
 		n.options.Subnets[i].subnet = createSubnetTxID
 		n.options.Subnets[i].chain = createChainTxID
 	}
 
-	return nil
+	if err := n.containerLifecycle.RemoveContainer(ctx); err != nil {
+		return err
+	}
+
+	if err := n.CreateContainer(ctx); err != nil {
+		return err
+	}
+
+	return n.containerLifecycle.StartContainer(ctx)
 }
 
 func (n *AvalancheNode) Start(ctx context.Context, testName string, additionalGenesisWallets []ibc.WalletAmount) error {
@@ -516,18 +541,30 @@ func (n *AvalancheNode) Start(ctx context.Context, testName string, additionalGe
 		return err
 	}
 
+	time.Sleep(10 * time.Second)
+
 	infoClient := info.NewClient(fmt.Sprintf("http://127.0.0.1:%s", n.RPCPort()))
 	for done := false; !done && err == nil; {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context closed")
 		default:
-			done, err = infoClient.IsBootstrapped(ctx, "X")
+			xdone, xerr := infoClient.IsBootstrapped(ctx, "X")
 			if errors.Is(err, io.EOF) {
 				err = nil
 			}
+			pdone, perr := infoClient.IsBootstrapped(ctx, "P")
+			if errors.Is(err, io.EOF) {
+				err = nil
+			}
+			cdone, cerr := infoClient.IsBootstrapped(ctx, "C")
+			if errors.Is(err, io.EOF) {
+				err = nil
+			}
+			done = xdone && pdone && cdone
+			err = errors.Join(xerr, perr, cerr)
+			time.Sleep(500 * time.Millisecond)
 		}
-		time.Sleep(500 * time.Millisecond)
 	}
 
 	return err
