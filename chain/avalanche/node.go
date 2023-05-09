@@ -459,6 +459,8 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 		zap.Duration("duration", time.Since(importStartTime)),
 	)
 
+	time.Sleep(2 * time.Second)
+
 	for i, subnet := range n.options.Subnets {
 		createSubnetStartTime := time.Now()
 		createSubnetTxID, err := pWallet.IssueCreateSubnetTx(owner, common.WithContext(ctx), common.WithAssumeDecided())
