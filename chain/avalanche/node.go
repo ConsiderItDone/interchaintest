@@ -461,7 +461,7 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 
 	for i, subnet := range n.options.Subnets {
 		createSubnetStartTime := time.Now()
-		createSubnetTxID, err := pWallet.IssueCreateSubnetTx(owner, common.WithContext(ctx))
+		createSubnetTxID, err := pWallet.IssueCreateSubnetTx(owner, common.WithContext(ctx), common.WithAssumeDecided())
 		if err != nil {
 			n.logger.Error(
 				"failed to issue create subnet transaction",
@@ -477,6 +477,7 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 			zap.Duration("duration", time.Since(createSubnetStartTime)),
 		)
 
+		time.Sleep(4 * time.Second)
 		createChainStartTime := time.Now()
 		createChainTxID, err := pWallet.IssueCreateChainTx(createSubnetTxID, subnet.Genesis, subnet.VmID, nil, subnet.Name)
 		if err != nil {
