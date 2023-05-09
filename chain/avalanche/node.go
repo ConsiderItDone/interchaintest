@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/ava-labs/avalanchego/api/info"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/crypto/secp256k1"
@@ -369,6 +367,7 @@ func (n *AvalancheNode) CreateContainer(ctx context.Context) error {
 
 	cmd := []string{
 		n.chain.cfg.Bin,
+		"--log-level", "verbo",
 		"--http-host", "0.0.0.0",
 		"--data-dir", n.HomeDir(),
 		"--public-ip", n.options.PublicIP,
@@ -527,7 +526,11 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 		return err
 	}
 
-	return n.containerLifecycle.StartContainer(ctx)
+	if err := n.containerLifecycle.StartContainer(ctx); err != nil {
+		return err
+	}
+
+	return lib.WaitNode(ctx, "127.0.0.1", n.RPCPort())
 }
 
 func (n *AvalancheNode) Start(ctx context.Context, testName string, additionalGenesisWallets []ibc.WalletAmount) error {
@@ -536,36 +539,5 @@ func (n *AvalancheNode) Start(ctx context.Context, testName string, additionalGe
 		return err
 	}
 
-	err = lib.WaitPort(ctx, "127.0.0.1", n.RPCPort())
-	if err != nil {
-		return err
-	}
-
-	time.Sleep(10 * time.Second)
-
-	infoClient := info.NewClient(fmt.Sprintf("http://127.0.0.1:%s", n.RPCPort()))
-	for done := false; !done && err == nil; {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context closed")
-		default:
-			xdone, xerr := infoClient.IsBootstrapped(ctx, "X")
-			if errors.Is(err, io.EOF) {
-				err = nil
-			}
-			pdone, perr := infoClient.IsBootstrapped(ctx, "P")
-			if errors.Is(err, io.EOF) {
-				err = nil
-			}
-			cdone, cerr := infoClient.IsBootstrapped(ctx, "C")
-			if errors.Is(err, io.EOF) {
-				err = nil
-			}
-			done = xdone && pdone && cdone
-			err = errors.Join(xerr, perr, cerr)
-			time.Sleep(500 * time.Millisecond)
-		}
-	}
-
-	return err
+	return lib.WaitNode(ctx, "127.0.0.1", n.RPCPort())
 }
