@@ -2,6 +2,7 @@ package penumbra_test
 
 import (
 	"context"
+	_ "embed"
 	"testing"
 
 	interchaintest "github.com/strangelove-ventures/interchaintest/v7"
@@ -10,6 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 )
+
+//go:embed subnet-evm/srEXiWaHuhNyGwPUi444Tu47ZEDwxTWrbQiuD7FmgSAQ6X7Dy
+var subnetevmVM []byte
+
+//go:embed subnet-evm/genesis.json
+var subnetevmGenesis []byte
 
 func TestAvalancheChainStart(t *testing.T) {
 	if testing.Short() {
@@ -25,14 +32,14 @@ func TestAvalancheChainStart(t *testing.T) {
 	chains, err := interchaintest.NewBuiltinChainFactory(zaptest.NewLogger(t), []*interchaintest.ChainSpec{
 		{
 			Name:    "avalanche",
-			Version: "v1.9.16",
+			Version: "v1.10.1",
 			ChainConfig: ibc.ChainConfig{
 				ChainID: "neto-123123",
 				AvalancheSubnets: []ibc.AvalancheSubnetConfig{
 					{
-						Name:    "timestampvm",
-						VMFile:  "",
-						Genesis: []byte("{}"),
+						Name:    "subnetevm",
+						VM:      subnetevmVM,
+						Genesis: subnetevmGenesis,
 					},
 				},
 			},

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"time"
 
 	"github.com/ava-labs/avalanchego/ids"
@@ -97,25 +96,13 @@ func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *c
 		subnetOpts = make([]AvalancheNodeSubnetOpts, len(c.cfg.AvalancheSubnets))
 		for i := range c.cfg.AvalancheSubnets {
 			subnetOpts[i].Name = c.cfg.AvalancheSubnets[i].Name
+			subnetOpts[i].VM = c.cfg.AvalancheSubnets[i].VM
 			subnetOpts[i].Genesis = c.cfg.AvalancheSubnets[i].Genesis
 			vmName := make([]byte, 32)
 			copy(vmName[:], []byte(c.cfg.AvalancheSubnets[i].Name))
 			subnetOpts[i].VmID, err = ids.ToID(vmName)
 			if err != nil {
 				return err
-			}
-
-			if len(c.cfg.AvalancheSubnets[i].VMFile) > 0 {
-				file, err := os.Open(c.cfg.AvalancheSubnets[i].VMFile)
-				if err != nil {
-					return err
-				}
-				file.Close()
-				vmFileContent, err := io.ReadAll(file)
-				if err != nil {
-					return err
-				}
-				subnetOpts[i].VM = vmFileContent
 			}
 		}
 	}

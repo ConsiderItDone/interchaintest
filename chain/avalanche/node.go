@@ -104,25 +104,6 @@ func NewAvalancheNode(
 		options:      *options,
 	}
 
-	// avalanchego
-	//   --plugin-dir=<Sets the directory for VM plugins. The default value is $HOME/.avalanchego/plugins>
-	//   --vm-aliases-file=<Path to JSON file that defines aliases for Virtual Machine IDs. Defaults to ~/.avalanchego/configs/vms/aliases.json>
-	//   --public-ip=<options.PublicIP>
-	//   --http-port=<options.HttpPort>
-	//   --staking-port=<options.StakingPort>
-	//   --db-dir=db/node<idx>
-	//   --network-id=<options.NetworkID>
-	//   [--bootstrap-ips=<options.Bootstrap[0].Addr>]
-	//   [--bootstrap-ids=<options.Bootstrap[0].ID>]
-	//   --staking-tls-cert-file=$(pwd)/staking/local/staker<n>.crt
-	//   --staking-tls-key-file=$(pwd)/staking/local/staker<n>.key
-	// staking-tls-cert-file and staking-tls-key-file can be generated using NewCertAndKeyBytes
-	//
-	// links to genesis config https://github.com/ava-labs/avalanche-docs/blob/c136e8752af23db5214ff82c2153aac55542781b/docs/nodes/maintain/avalanchego-config-flags.md#genesis
-	// https://github.com/ava-labs/avalanchego/blob/master/genesis/genesis_local.json
-	//
-	// Vm ID can be generated as zero-extended in a 32 byte array and encoded in CB58([32]byte(subnet.Name))
-
 	name := node.Name()
 
 	volume, err := dockerClient.VolumeCreate(ctx, volume.VolumeCreateBody{
@@ -367,7 +348,6 @@ func (n *AvalancheNode) CreateContainer(ctx context.Context) error {
 
 	cmd := []string{
 		n.chain.cfg.Bin,
-		"--log-level", "verbo",
 		"--http-host", "0.0.0.0",
 		"--data-dir", n.HomeDir(),
 		"--public-ip", n.options.PublicIP,
