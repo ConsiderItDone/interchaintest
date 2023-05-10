@@ -71,7 +71,7 @@ func TestAvalancheChainStart(t *testing.T) {
 		})
 	})
 	eg.Go(func() error {
-		return testutil.WaitForBlocks(ctx, 0, chain)
+		return testutil.WaitForBlocks(ctx, 2, chain)
 	})
 
 	require.NoError(t, eg.Wait(), "avalanche chain failed to make blocks")
