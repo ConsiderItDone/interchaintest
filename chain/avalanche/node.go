@@ -544,6 +544,8 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 			zap.Duration("duration", time.Since(createSubnetStartTime)),
 		)
 
+		time.Sleep(4 * time.Second)
+
 		startTime := time.Now().Add(time.Minute)
 		duration := 2 * 7 * 24 * time.Hour // 2 weeks
 		weight := units.Schmeckle
@@ -573,7 +575,6 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 			zap.Duration("duration", time.Since(addValidatorStartTime)),
 		)
 
-		time.Sleep(4 * time.Second)
 		createChainStartTime := time.Now()
 		createChainTxID, err := pWallet.IssueCreateChainTx(createSubnetTxID, subnet.Genesis, subnet.VmID, nil, subnet.Name)
 		if err != nil {

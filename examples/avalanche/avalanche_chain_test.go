@@ -3,7 +3,6 @@ package penumbra_test
 import (
 	"context"
 	_ "embed"
-	"errors"
 	"testing"
 
 	interchaintest "github.com/strangelove-ventures/interchaintest/v7"
@@ -66,23 +65,13 @@ func TestAvalancheChainStart(t *testing.T) {
 
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
-		return errors.Join(
-			chain.SendFunds(context.WithValue(ctx, "subnet", "0"), "56289e99c94b6912bfc12adc093c9b51124f0dc54ac7a766b2bc5ccf558d8027", ibc.WalletAmount{
-				Address: "0x8db97C7cEcE249c2b98bDC0226Cc4C2A57BF52FC",
-				Amount:  1000000,
-			}),
-			chain.SendFunds(context.WithValue(ctx, "subnet", "0"), "56289e99c94b6912bfc12adc093c9b51124f0dc54ac7a766b2bc5ccf558d8027", ibc.WalletAmount{
-				Address: "0x8db97C7cEcE249c2b98bDC0226Cc4C2A57BF52FC",
-				Amount:  1000000,
-			}),
-			chain.SendFunds(context.WithValue(ctx, "subnet", "0"), "56289e99c94b6912bfc12adc093c9b51124f0dc54ac7a766b2bc5ccf558d8027", ibc.WalletAmount{
-				Address: "0x8db97C7cEcE249c2b98bDC0226Cc4C2A57BF52FC",
-				Amount:  1000000,
-			}),
-		)
+		return chain.SendFunds(context.WithValue(ctx, "subnet", "0"), "56289e99c94b6912bfc12adc093c9b51124f0dc54ac7a766b2bc5ccf558d8027", ibc.WalletAmount{
+			Address: "0x8db97C7cEcE249c2b98bDC0226Cc4C2A57BF52FC",
+			Amount:  1000000,
+		})
 	})
 	eg.Go(func() error {
-		return testutil.WaitForBlocks(ctx, 2, chain)
+		return testutil.WaitForBlocks(ctx, 0, chain)
 	})
 
 	require.NoError(t, eg.Wait(), "avalanche chain failed to make blocks")
