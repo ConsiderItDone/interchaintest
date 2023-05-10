@@ -15,7 +15,7 @@ import (
 
 type AvalancheSubnetConfig struct {
 	Name    string
-	VMFile  string
+	VM      []byte
 	Genesis []byte
 
 	subnet ids.ID
