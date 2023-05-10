@@ -5,12 +5,13 @@ import (
 	_ "embed"
 	"testing"
 
-	interchaintest "github.com/strangelove-ventures/interchaintest/v7"
-	"github.com/strangelove-ventures/interchaintest/v7/ibc"
-	"github.com/strangelove-ventures/interchaintest/v7/testutil"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 	"golang.org/x/sync/errgroup"
+
+	interchaintest "github.com/strangelove-ventures/interchaintest/v7"
+	"github.com/strangelove-ventures/interchaintest/v7/ibc"
+	"github.com/strangelove-ventures/interchaintest/v7/testutil"
 )
 
 //go:embed subnet-evm/srEXiWaHuhNyGwPUi444Tu47ZEDwxTWrbQiuD7FmgSAQ6X7Dy
@@ -63,15 +64,17 @@ func TestAvalancheChainStart(t *testing.T) {
 	err = chain.Start(t.Name(), ctx)
 	require.NoError(t, err, "failed to start avalanche chain")
 
+	subnetCtx := context.WithValue(ctx, "subnet", "0")
+
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
-		return chain.SendFunds(context.WithValue(ctx, "subnet", "0"), "56289e99c94b6912bfc12adc093c9b51124f0dc54ac7a766b2bc5ccf558d8027", ibc.WalletAmount{
+		return chain.SendFunds(subnetCtx, "56289e99c94b6912bfc12adc093c9b51124f0dc54ac7a766b2bc5ccf558d8027", ibc.WalletAmount{
 			Address: "0x8db97C7cEcE249c2b98bDC0226Cc4C2A57BF52FC",
 			Amount:  1000000,
 		})
 	})
 	eg.Go(func() error {
-		return testutil.WaitForBlocks(ctx, 2, chain)
+		return testutil.WaitForBlocks(subnetCtx, 2, chain)
 	})
 
 	require.NoError(t, eg.Wait(), "avalanche chain failed to make blocks")

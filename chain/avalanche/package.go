@@ -3,7 +3,6 @@ package avalanche
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"time"
 
@@ -13,15 +12,16 @@ import (
 	"github.com/ava-labs/avalanchego/utils/formatting/address"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
-	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/lib"
-	"github.com/strangelove-ventures/interchaintest/v7/ibc"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/lib"
+	"github.com/strangelove-ventures/interchaintest/v7/ibc"
 )
 
 var (
-	_                    ibc.Chain = &AvalancheChain{}
-	ChainBootsrapTimeout           = 5 * time.Minute
+	_                     ibc.Chain = &AvalancheChain{}
+	ChainBootstrapTimeout           = 6 * time.Minute
 )
 
 type AvalancheChain struct {
@@ -50,6 +50,10 @@ func (c *AvalancheChain) node() *AvalancheNode {
 	if len(c.nodes) > c.numValidators {
 		return c.nodes[c.numValidators]
 	}
+
+	if len(c.nodes) > 1 {
+		return c.nodes[1]
+	}
 	return c.nodes[0]
 }
 
@@ -60,23 +64,23 @@ func (c *AvalancheChain) Config() ibc.ChainConfig {
 
 // Initialize initializes node structs so that things like initializing keys can be done before starting the chain
 func (c *AvalancheChain) Initialize(ctx context.Context, testName string, cli *client.Client, networkID string) error {
-	for _, image := range c.Config().Images {
-		rc, err := cli.ImagePull(
-			ctx,
-			image.Repository+":"+image.Version,
-			types.ImagePullOptions{},
-		)
-		if err != nil {
-			c.log.Error("Failed to pull image",
-				zap.Error(err),
-				zap.String("repository", image.Repository),
-				zap.String("tag", image.Version),
-			)
-		} else {
-			_, _ = io.Copy(io.Discard, rc)
-			_ = rc.Close()
-		}
-	}
+	//for _, image := range c.Config().Images {
+	//	rc, err := cli.ImagePull(
+	//		ctx,
+	//		image.Repository+":"+image.Version,
+	//		types.ImagePullOptions{},
+	//	)
+	//	if err != nil {
+	//		c.log.Error("Failed to pull image",
+	//			zap.Error(err),
+	//			zap.String("repository", image.Repository),
+	//			zap.String("tag", image.Version),
+	//		)
+	//	} else {
+	//		_, _ = io.Copy(io.Discard, rc)
+	//		_ = rc.Close()
+	//	}
+	//}
 
 	rawChainID := c.Config().ChainID
 	if rawChainID == "" {
@@ -214,7 +218,7 @@ func (c *AvalancheChain) Start(testName string, ctx context.Context, additionalG
 	for _, node := range c.nodes {
 		node := node
 		eg.Go(func() error {
-			tCtx, tCtxCancel := context.WithTimeout(egCtx, ChainBootsrapTimeout)
+			tCtx, tCtxCancel := context.WithTimeout(egCtx, ChainBootstrapTimeout)
 			defer tCtxCancel()
 
 			return node.Start(tCtx, testName, additionalGenesisWallets)

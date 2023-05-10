@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanchego/api/info"
+	"go.uber.org/zap"
 )
 
 func IsOpened(host string, port string) bool {
@@ -39,7 +40,7 @@ func WaitPort(ctx context.Context, host, port string) error {
 	return err
 }
 
-func WaitNode(ctx context.Context, host, port string) error {
+func WaitNode(ctx context.Context, host, port string, logger *zap.Logger) error {
 	err := WaitPort(ctx, host, port)
 	if err != nil {
 		return err
@@ -65,9 +66,16 @@ func WaitNode(ctx context.Context, host, port string) error {
 			if errors.Is(cerr, io.EOF) || errors.Is(cerr, syscall.ECONNREFUSED) {
 				cerr = nil
 			}
+			logger.Info(
+				"bootstrap status",
+				zap.Boolp("x", &xdone),
+				zap.Boolp("p", &pdone),
+				zap.Boolp("c", &cdone),
+			)
+
 			done = xdone && pdone && cdone
 			err = errors.Join(xerr, perr, cerr)
-			time.Sleep(time.Second)
+			time.Sleep(5 * time.Second)
 		}
 	}
 
