@@ -14,8 +14,10 @@ import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/crypto/secp256k1"
+	"github.com/ava-labs/avalanchego/utils/units"
 	"github.com/ava-labs/avalanchego/vms/components/avax"
 	"github.com/ava-labs/avalanchego/vms/platformvm"
+	"github.com/ava-labs/avalanchego/vms/platformvm/txs"
 	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
 	"github.com/ava-labs/avalanchego/wallet/subnet/primary"
 	"github.com/ava-labs/avalanchego/wallet/subnet/primary/common"
@@ -540,6 +542,35 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 			zap.String("name", subnet.Name),
 			zap.String("createSubnetTxID", createSubnetTxID.String()),
 			zap.Duration("duration", time.Since(createSubnetStartTime)),
+		)
+
+		startTime := time.Now().Add(time.Minute)
+		duration := 2 * 7 * 24 * time.Hour // 2 weeks
+		weight := units.Schmeckle
+		addValidatorStartTime := time.Now()
+		addValidatorTxID, err := pWallet.IssueAddSubnetValidatorTx(&txs.SubnetValidator{
+			Validator: txs.Validator{
+				NodeID: n.options.Credentials.ID,
+				Start:  uint64(startTime.Unix()),
+				End:    uint64(startTime.Add(duration).Unix()),
+				Wght:   weight,
+			},
+			Subnet: createSubnetTxID,
+		})
+		if err != nil {
+			n.logger.Error(
+				"failed to issue add subnet validator transaction:",
+				zap.Error(err),
+				zap.String("name", subnet.Name),
+			)
+			return err
+		}
+		n.logger.Info(
+			"added new subnet validator",
+			zap.String("nodeID", n.options.Credentials.ID.String()),
+			zap.String("subnetID", createSubnetTxID.String()),
+			zap.String("addValidatorTxID", addValidatorTxID.String()),
+			zap.Duration("duration", time.Since(addValidatorStartTime)),
 		)
 
 		time.Sleep(4 * time.Second)
