@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"syscall"
 	"time"
 
 	"github.com/ava-labs/avalanchego/api/info"
@@ -53,16 +54,16 @@ func WaitNode(ctx context.Context, host, port string) error {
 			return fmt.Errorf("context closed")
 		default:
 			xdone, xerr := client.IsBootstrapped(ctx, "X")
-			if errors.Is(err, io.EOF) {
-				err = nil
+			if errors.Is(xerr, io.EOF) || errors.Is(xerr, syscall.ECONNREFUSED) {
+				xerr = nil
 			}
 			pdone, perr := client.IsBootstrapped(ctx, "P")
-			if errors.Is(err, io.EOF) {
-				err = nil
+			if errors.Is(perr, io.EOF) || errors.Is(xerr, syscall.ECONNREFUSED) {
+				perr = nil
 			}
 			cdone, cerr := client.IsBootstrapped(ctx, "C")
-			if errors.Is(err, io.EOF) {
-				err = nil
+			if errors.Is(cerr, io.EOF) || errors.Is(xerr, syscall.ECONNREFUSED) {
+				cerr = nil
 			}
 			done = xdone && pdone && cdone
 			err = errors.Join(xerr, perr, cerr)
