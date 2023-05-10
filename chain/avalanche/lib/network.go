@@ -58,11 +58,11 @@ func WaitNode(ctx context.Context, host, port string) error {
 				xerr = nil
 			}
 			pdone, perr := client.IsBootstrapped(ctx, "P")
-			if errors.Is(perr, io.EOF) || errors.Is(xerr, syscall.ECONNREFUSED) {
+			if errors.Is(perr, io.EOF) || errors.Is(perr, syscall.ECONNREFUSED) {
 				perr = nil
 			}
 			cdone, cerr := client.IsBootstrapped(ctx, "C")
-			if errors.Is(cerr, io.EOF) || errors.Is(xerr, syscall.ECONNREFUSED) {
+			if errors.Is(cerr, io.EOF) || errors.Is(cerr, syscall.ECONNREFUSED) {
 				cerr = nil
 			}
 			done = xdone && pdone && cdone
