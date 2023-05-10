@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +24,10 @@ import (
 	"github.com/docker/docker/api/types/volume"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/lib"
 	"github.com/strangelove-ventures/interchaintest/v7/ibc"
 	"github.com/strangelove-ventures/interchaintest/v7/internal/dockerutil"
@@ -278,7 +284,64 @@ func (n *AvalancheNode) SendFunds(ctx context.Context, keyName string, amount ib
 	// IF allocated chain subnet config:
 	//   - Blockchain Handlers: /ext/bc/[chainID]
 	//   - VM Handlers: /ext/vm/[vmID]
-	panic("ToDo: implement me")
+	// panic("ToDo: implement me")
+
+	rawSubnet, ok := ctx.Value("subnet").(string)
+	if !ok {
+		return fmt.Errorf("can't read subnet from context")
+	}
+
+	subnet, err := strconv.Atoi(rawSubnet)
+	if err != nil {
+		return fmt.Errorf("can't parse subnet idx from context: %w", err)
+	}
+
+	chain := n.options.Subnets[subnet].chain
+	rpcUrl := fmt.Sprintf("http://127.0.0.1:%s/ext/bc/%s/rpc", n.RPCPort(), chain)
+
+	client, err := ethclient.Dial(rpcUrl)
+	if err != nil {
+		return fmt.Errorf("can't create client for subnet[%s]: %w", chain, err)
+	}
+
+	chainID, err := client.NetworkID(context.Background())
+	if err != nil {
+		return fmt.Errorf("can't connect to subnet[%s][%s]: %w", chain, rpcUrl, err)
+	}
+
+	n.logger.Info(
+		"connected to subnet",
+		zap.String("subnet", chain.String()),
+		zap.Uint64("chainID", chainID.Uint64()),
+	)
+
+	privateKey, err := crypto.HexToECDSA(keyName)
+	if err != nil {
+		return fmt.Errorf("can't parse private key: %s", err)
+	}
+
+	senderAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+
+	senderNonce, err := client.PendingNonceAt(ctx, senderAddr)
+	if err != nil {
+		return fmt.Errorf("can't get nonce: %w", err)
+	}
+
+	gasPrice, err := client.SuggestGasPrice(context.Background())
+	if err != nil {
+		return fmt.Errorf("can't get gas price: %w", err)
+	}
+
+	toAddress := ethcommon.HexToAddress(amount.Address)
+
+	utx := ethtypes.NewTransaction(senderNonce, toAddress, big.NewInt(amount.Amount), 21000, gasPrice, nil)
+
+	signedTx, err := ethtypes.SignTx(utx, ethtypes.NewEIP155Signer(chainID), privateKey)
+	if err != nil {
+		return fmt.Errorf("can't sign transaction: %w", err)
+	}
+
+	return client.SendTransaction(ctx, signedTx)
 }
 
 func (n *AvalancheNode) SendIBCTransfer(ctx context.Context, channelID, keyName string, amount ibc.WalletAmount, options ibc.TransferOptions) (ibc.Tx, error) {

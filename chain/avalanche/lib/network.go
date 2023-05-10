@@ -67,7 +67,7 @@ func WaitNode(ctx context.Context, host, port string) error {
 			}
 			done = xdone && pdone && cdone
 			err = errors.Join(xerr, perr, cerr)
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(time.Second)
 		}
 	}
 

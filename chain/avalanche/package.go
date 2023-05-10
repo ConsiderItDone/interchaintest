@@ -254,7 +254,7 @@ func (c *AvalancheChain) GetGRPCAddress() string {
 // GetHostRPCAddress returns the rpc address that can be reached by processes on the host machine.
 // Note that this will not return a valid value until after Start returns.
 func (c *AvalancheChain) GetHostRPCAddress() string {
-	panic("ToDo: implement me")
+	return fmt.Sprintf("http://127.0.0.1:%s", c.node().RPCPort())
 }
 
 // GetHostGRPCAddress returns the grpc address that can be reached by processes on the host machine.
