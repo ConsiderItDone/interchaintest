@@ -464,6 +464,8 @@ func (n *AvalancheNode) StartSubnets(ctx context.Context) error {
 
 	// Pull out useful constants to use when issuing transactions.
 	xChainID := xWallet.BlockchainID()
+	xBalances, err := xWallet.Builder().GetImportableBalance(xChainID)
+
 	owner := &secp256k1fx.OutputOwners{
 		Threshold: 1,
 		Addrs:     []ids.ShortID{ownerAddr},
