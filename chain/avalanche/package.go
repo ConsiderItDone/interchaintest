@@ -16,8 +16,8 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/strangelove-ventures/interchaintest/v7/chain/avalanche/lib"
-	"github.com/strangelove-ventures/interchaintest/v7/ibc"
+	"github.com/strangelove-ventures/interchaintest/v8/chain/avalanche/lib"
+	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 )
 
 var (
