@@ -13,10 +13,11 @@ import (
 	volumetypes "github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/strangelove-ventures/interchaintest/v7/ibc"
-	"github.com/strangelove-ventures/interchaintest/v7/internal/dockerutil"
-	"github.com/strangelove-ventures/interchaintest/v7/testutil"
 	"go.uber.org/zap"
+
+	"github.com/strangelove-ventures/interchaintest/v8/ibc"
+	"github.com/strangelove-ventures/interchaintest/v8/internal/dockerutil"
+	"github.com/strangelove-ventures/interchaintest/v8/testutil"
 )
 
 const (
@@ -47,12 +48,14 @@ type DockerRelayer struct {
 	wallets map[string]ibc.Wallet
 
 	homeDir string
+
+	extraStartupFlags []string
 }
 
 var _ ibc.Relayer = (*DockerRelayer)(nil)
 
 // NewDockerRelayer returns a new DockerRelayer.
-func NewDockerRelayer(ctx context.Context, log *zap.Logger, testName string, cli *client.Client, networkID string, c RelayerCommander, options ...RelayerOption) (*DockerRelayer, error) {
+func NewDockerRelayer(ctx context.Context, log *zap.Logger, testName string, cli *client.Client, networkID string, c RelayerCommander, options ...RelayerOpt) (*DockerRelayer, error) {
 	r := DockerRelayer{
 		log: log,
 
@@ -72,22 +75,15 @@ func NewDockerRelayer(ctx context.Context, log *zap.Logger, testName string, cli
 	r.homeDir = defaultRlyHomeDirectory
 
 	for _, opt := range options {
-		switch o := opt.(type) {
-		case RelayerOptionDockerImage:
-			r.customImage = &o.DockerImage
-		case RelayerOptionImagePull:
-			r.pullImage = o.Pull
-		case RelayerOptionHomeDir:
-			r.homeDir = o.HomeDir
-		}
+		opt(&r)
 	}
 
-	containerImage := r.containerImage()
+	containerImage := r.ContainerImage()
 	if err := r.pullContainerImageIfNecessary(containerImage); err != nil {
 		return nil, fmt.Errorf("pulling container image %s: %w", containerImage.Ref(), err)
 	}
 
-	v, err := cli.VolumeCreate(ctx, volumetypes.VolumeCreateBody{
+	v, err := cli.VolumeCreate(ctx, volumetypes.CreateOptions{
 		// Have to leave Driver unspecified for Docker Desktop compatibility.
 
 		Labels: map[string]string{dockerutil.CleanupLabel: testName},
@@ -211,6 +207,10 @@ func (r *DockerRelayer) AddKey(ctx context.Context, rep ibc.RelayerExecReporter,
 	return wallet, nil
 }
 
+func (r *DockerRelayer) GetExtraStartupFlags() []string {
+	return r.extraStartupFlags
+}
+
 func (r *DockerRelayer) GetWallet(chainID string) (ibc.Wallet, bool) {
 	wallet, ok := r.wallets[chainID]
 	return wallet, ok
@@ -294,7 +294,7 @@ func (r *DockerRelayer) LinkPath(ctx context.Context, rep ibc.RelayerExecReporte
 }
 
 func (r *DockerRelayer) Exec(ctx context.Context, rep ibc.RelayerExecReporter, cmd []string, env []string) ibc.RelayerExecResult {
-	job := dockerutil.NewImage(r.log, r.client, r.networkID, r.testName, r.containerImage().Repository, r.containerImage().Version)
+	job := dockerutil.NewImage(r.log, r.client, r.networkID, r.testName, r.ContainerImage().Repository, r.ContainerImage().Version)
 	opts := dockerutil.ContainerOptions{
 		Env:   env,
 		Binds: r.Bind(),
@@ -354,9 +354,9 @@ func (r *DockerRelayer) StartRelayer(ctx context.Context, rep ibc.RelayerExecRep
 		return fmt.Errorf("tried to start relayer again without stopping first")
 	}
 
-	containerImage := r.containerImage()
+	containerImage := r.ContainerImage()
 	joinedPaths := strings.Join(pathNames, ".")
-	containerName := fmt.Sprintf("%s-%s", r.c.Name(), joinedPaths)
+	containerName := fmt.Sprintf("%s-%s-%s", r.c.Name(), joinedPaths, dockerutil.RandLowerCaseLetterString(5))
 
 	cmd := r.c.StartRelayer(r.HomeDir(), pathNames...)
 
@@ -364,7 +364,7 @@ func (r *DockerRelayer) StartRelayer(ctx context.Context, rep ibc.RelayerExecRep
 
 	if err := r.containerLifecycle.CreateContainer(
 		ctx, r.testName, r.networkID, containerImage, nil,
-		r.Bind(), r.HostName(joinedPaths), cmd,
+		r.Bind(), r.HostName(joinedPaths), cmd, nil,
 	); err != nil {
 		return err
 	}
@@ -408,13 +408,13 @@ func (r *DockerRelayer) StopRelayer(ctx context.Context, rep ibc.RelayerExecRepo
 		return fmt.Errorf("StopRelayer: inspecting container: %w", err)
 	}
 
-	startedAt, err := time.Parse(c.State.StartedAt, time.RFC3339Nano)
+	startedAt, err := time.Parse(time.RFC3339Nano, c.State.StartedAt)
 	if err != nil {
 		r.log.Info("Failed to parse container StartedAt", zap.Error(err))
 		startedAt = time.Unix(0, 0)
 	}
 
-	finishedAt, err := time.Parse(c.State.FinishedAt, time.RFC3339Nano)
+	finishedAt, err := time.Parse(time.RFC3339Nano, c.State.FinishedAt)
 	if err != nil {
 		r.log.Info("Failed to parse container FinishedAt", zap.Error(err))
 		finishedAt = time.Now().UTC()
@@ -445,7 +445,21 @@ func (r *DockerRelayer) StopRelayer(ctx context.Context, rep ibc.RelayerExecRepo
 	return nil
 }
 
-func (r *DockerRelayer) containerImage() ibc.DockerImage {
+func (r *DockerRelayer) PauseRelayer(ctx context.Context) error {
+	if r.containerLifecycle == nil {
+		return fmt.Errorf("container not running")
+	}
+	return r.client.ContainerPause(ctx, r.containerLifecycle.ContainerID())
+}
+
+func (r *DockerRelayer) ResumeRelayer(ctx context.Context) error {
+	if r.containerLifecycle == nil {
+		return fmt.Errorf("container not running")
+	}
+	return r.client.ContainerUnpause(ctx, r.containerLifecycle.ContainerID())
+}
+
+func (r *DockerRelayer) ContainerImage() ibc.DockerImage {
 	if r.customImage != nil {
 		return *r.customImage
 	}

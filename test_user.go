@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/strangelove-ventures/interchaintest/v7/ibc"
-	"github.com/strangelove-ventures/interchaintest/v7/internal/dockerutil"
-	"github.com/strangelove-ventures/interchaintest/v7/testutil"
+	"cosmossdk.io/math"
+	"github.com/strangelove-ventures/interchaintest/v8/ibc"
+	"github.com/strangelove-ventures/interchaintest/v8/internal/dockerutil"
+	"github.com/strangelove-ventures/interchaintest/v8/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -30,12 +31,20 @@ func GetAndFundTestUserWithMnemonic(
 
 	err = chain.SendFunds(ctx, FaucetAccountKeyName, ibc.WalletAmount{
 		Address: user.FormattedAddress(),
-		Amount:  amount,
+		Amount:  math.NewInt(amount),
 		Denom:   chainCfg.Denom,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get funds from faucet: %w", err)
 	}
+
+	// If this chain is an instance of Penumbra we need to initialize a new pclientd instance for the
+	// newly created test user account.
+	err = CreatePenumbraClient(ctx, chain, keyName)
+	if err != nil {
+		return nil, err
+	}
+
 	return user, nil
 }
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"time"
 
 	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -13,8 +12,9 @@ import (
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/go-connections/nat"
-	"github.com/strangelove-ventures/interchaintest/v7/ibc"
 	"go.uber.org/zap"
+
+	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 )
 
 type ContainerLifecycle struct {
@@ -42,6 +42,7 @@ func (c *ContainerLifecycle) CreateContainer(
 	volumeBinds []string,
 	hostName string,
 	cmd []string,
+	env []string,
 ) error {
 	return c.CreateContainerInNetwork(
 		ctx,
@@ -91,6 +92,7 @@ func (c *ContainerLifecycle) CreateContainerInNetwork(
 			Image: imageRef,
 
 			Entrypoint: []string{},
+			Env:        env,
 			Cmd:        cmd,
 
 			Hostname: hostName,
@@ -137,9 +139,20 @@ func (c *ContainerLifecycle) StartContainer(ctx context.Context) error {
 	return nil
 }
 
+func (c *ContainerLifecycle) PauseContainer(ctx context.Context) error {
+	return c.client.ContainerPause(ctx, c.id)
+}
+
+func (c *ContainerLifecycle) UnpauseContainer(ctx context.Context) error {
+	return c.client.ContainerUnpause(ctx, c.id)
+}
+
 func (c *ContainerLifecycle) StopContainer(ctx context.Context) error {
-	timeout := 30 * time.Second
-	return c.client.ContainerStop(ctx, c.id, &timeout)
+	var timeout container.StopOptions
+	timeoutSec := 30
+	timeout.Timeout = &timeoutSec
+
+	return c.client.ContainerStop(ctx, c.id, timeout)
 }
 
 func (c *ContainerLifecycle) RemoveContainer(ctx context.Context) error {
@@ -167,4 +180,17 @@ func (c *ContainerLifecycle) GetHostPorts(ctx context.Context, portIDs ...string
 		ports[i] = GetHostPort(cjson, p)
 	}
 	return ports, nil
+}
+
+// Running will inspect the container and check its state to determine if it is currently running.
+// If the container is running nil will be returned, otherwise an error is returned.
+func (c *ContainerLifecycle) Running(ctx context.Context) error {
+	cjson, err := c.client.ContainerInspect(ctx, c.id)
+	if err != nil {
+		return err
+	}
+	if cjson.State.Running {
+		return nil
+	}
+	return fmt.Errorf("container with name %s and id %s is not running", c.containerName, c.id)
 }

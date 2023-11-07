@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"cosmossdk.io/math"
 	"github.com/docker/docker/client"
-	"github.com/strangelove-ventures/interchaintest/v7/ibc"
-	"github.com/strangelove-ventures/interchaintest/v7/testreporter"
+	"github.com/strangelove-ventures/interchaintest/v8/ibc"
+	"github.com/strangelove-ventures/interchaintest/v8/testreporter"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
@@ -250,6 +251,15 @@ func (ic *Interchain) Build(ctx context.Context, rep *testreporter.RelayerExecRe
 		return fmt.Errorf("failed to track blocks: %w", err)
 	}
 
+	// If any configured chain is an instance of Penumbra we need to initialize new pclientd instances for the
+	// newly created faucet account.
+	for c := range ic.chains {
+		err = CreatePenumbraClient(ctx, c, FaucetAccountKeyName)
+		if err != nil {
+			return err
+		}
+	}
+
 	if err := ic.configureRelayerKeys(ctx, rep); err != nil {
 		// Error already wrapped with appropriate detail.
 		return err
@@ -351,7 +361,7 @@ func (ic *Interchain) genesisWalletAmounts(ctx context.Context) (map[ibc.Chain][
 			{
 				Address: faucetAddresses[c],
 				Denom:   c.Config().Denom,
-				Amount:  100_000_000_000_000, // Faucet wallet gets 100T units of denom.
+				Amount:  math.NewInt(100_000_000_000_000), // Faucet wallet gets 100T units of denom.
 			},
 		}
 
@@ -366,7 +376,7 @@ func (ic *Interchain) genesisWalletAmounts(ctx context.Context) (map[ibc.Chain][
 		walletAmounts[c] = append(walletAmounts[c], ibc.WalletAmount{
 			Address: wallet.FormattedAddress(),
 			Denom:   c.Config().Denom,
-			Amount:  1_000_000_000_000, // Every wallet gets 1t units of denom.
+			Amount:  math.NewInt(1_000_000_000_000), // Every wallet gets 1t units of denom.
 		})
 	}
 

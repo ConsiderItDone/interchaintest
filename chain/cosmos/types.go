@@ -93,6 +93,12 @@ type ProposalDeposit struct {
 	Amount string `json:"amount"`
 }
 
+type ParamChange struct {
+	Subspace string `json:"subspace"`
+	Key      string `json:"key"`
+	Value    any    `json:"value"`
+}
+
 type DumpContractStateResponse struct {
 	Models []ContractStateModels `json:"models"`
 }
@@ -100,4 +106,62 @@ type DumpContractStateResponse struct {
 type ContractStateModels struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
+}
+
+type BuildDependency struct {
+	Parent  string `json:"parent"`
+	Version string `json:"version"`
+
+	IsReplacement      bool   `json:"is_replacement"`
+	Replacement        string `json:"replacement"`
+	ReplacementVersion string `json:"replacement_version"`
+}
+
+type BinaryBuildInformation struct {
+	Name             string            `json:"name"`
+	ServerName       string            `json:"server_name"`
+	Version          string            `json:"version"`
+	Commit           string            `json:"commit"`
+	BuildTags        string            `json:"build_tags"`
+	Go               string            `json:"go"`
+	BuildDeps        []BuildDependency `json:"build_deps"`
+	CosmosSdkVersion string            `json:"cosmos_sdk_version"`
+}
+
+type BankMetaData struct {
+	Metadata struct {
+		Description string `json:"description"`
+		DenomUnits  []struct {
+			Denom    string   `json:"denom"`
+			Exponent int      `json:"exponent"`
+			Aliases  []string `json:"aliases"`
+		} `json:"denom_units"`
+		Base    string `json:"base"`
+		Display string `json:"display"`
+		Name    string `json:"name"`
+		Symbol  string `json:"symbol"`
+		URI     string `json:"uri"`
+		URIHash string `json:"uri_hash"`
+	} `json:"metadata"`
+}
+
+type QueryDenomAuthorityMetadataResponse struct {
+	AuthorityMetadata DenomAuthorityMetadata `protobuf:"bytes,1,opt,name=authority_metadata,json=authorityMetadata,proto3" json:"authority_metadata" yaml:"authority_metadata"`
+}
+
+type DenomAuthorityMetadata struct {
+	// Can be empty for no admin, or a valid address
+	Admin string `protobuf:"bytes,1,opt,name=admin,proto3" json:"admin,omitempty" yaml:"admin"`
+}
+
+type QueryModuleAccountResponse struct {
+	Account struct {
+		BaseAccount struct {
+			AccountNumber string `json:"account_number"`
+			Address       string `json:"address"`
+			PubKey        string `json:"pub_key"`
+			Sequence      string `json:"sequence"`
+		} `json:"base_account"`
+		Name string `json:"name"`
+	} `json:"account"`
 }
